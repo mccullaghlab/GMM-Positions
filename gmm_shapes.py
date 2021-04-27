@@ -311,7 +311,7 @@ class gmm_shape:
             score = bgmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
             for i in range(self.initIter-1):
                 bgmm = mixture.BayesianGaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))
-                tempScore = bgmm.score(self.trajData.reshape(self.nFrames,self.nFeatures)
+                tempScore = bgmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
                 if (tempScore > score):
                     self.clusters = bgmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
                     score = tempScore
@@ -321,7 +321,7 @@ class gmm_shape:
             score = gmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
             for i in range(self.initIter-1):
                 gmm = mixture.GaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))  
-                tempScore = gmm.score(self.trajData.reshape(self.nFrames,self.nFeatures)
+                tempScore = gmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
                 if (tempScore > score):
                     self.clusters = gmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
                     score = tempScore
