@@ -197,7 +197,7 @@ def traj_covar(trajData):
 
 
 @jit(nopython=True)
-def maximum_likelihood_opt(weights,likelihood,trajData):
+def maximum_likelihood_opt(weights,likelihood,centers,trajData):
     # get metadata from trajectory data
     nFrames = trajData.shape[0]
     nAtoms = trajData.shape[1]
@@ -207,7 +207,7 @@ def maximum_likelihood_opt(weights,likelihood,trajData):
     # declare cluster covariance matrices
     covar = np.empty((nClusters,nFeatures,nFeatures),dtype=np.float64)
     # declare cluster centers
-    centers = np.empty((nClusters,nAtoms,nDim),dtype=np.float64)
+    #centers = np.empty((nClusters,nAtoms,nDim),dtype=np.float64)
     # Compute the normaliztion constant
     normalization = np.zeros(nFrames,dtype=np.float64)
     for i in range(nFrames):
@@ -220,11 +220,28 @@ def maximum_likelihood_opt(weights,likelihood,trajData):
         # probabilities of the data to have been generanted by each gaussian
         b = (likelihood[k] * weights[k])*normalization
         # update mean and variance
-        centers[k], covar[k] = traj_iterative_average_covar_weighted(trajData, b)
+        centers[k], covar[k] = traj_iterative_average_covar_weighted(trajData, b, centers[k])
         # update the weights
         weights[k] = np.mean(b)
     return centers, covar, weights
     
+# Expectation step
+@jit
+def expectation(trajData, centers, covar):
+    # meta data
+    nClusters = centers.shape[0]
+    nFrames = trajData.shape[0]
+    nAtoms = trajData.shape[1]
+    nDim = trajData.shape[2]
+    nFeatures = nAtoms*nDim
+    likelihood = np.empty((nClusters,nFrames))
+    #trajData = trajData.reshape(nFrames,nFeatures)
+    # compute likelihood of each frame at each Gaussian
+    for k in range(nClusters):
+        # align the entire trajectory to each cluster mean if requested
+        trajData = traj_align(trajData,centers[k])
+        likelihood[k,:] = multivariate_normal.pdf(x=trajData.reshape(nFrames,nFeatures), mean=centers[k].reshape(nFeatures), cov=covar[k],allow_singular=True)
+    return likelihood
 
 @jit(nopython=True)
 def compute_log_likelihood(weights,likelihood):
@@ -238,24 +255,25 @@ def compute_log_likelihood(weights,likelihood):
 
 @jit(nopython=True)
 def compute_bic(nFeatures, nClusters, nFrames, logLikelihood):
-    k = nClusters*(nFeatures + nFeatures*(nFeatures+1)/2)
+    k = nClusters*(nFeatures + nFeatures*(nFeatures+1)/2 + 1) - 1
     return k*np.log(nFrames) - 2*logLikelihood
 
 @jit(nopython=True)
 def compute_aic(nFeatures, nClusters, logLikelihood):
-    k = nClusters*(nFeatures + nFeatures*(nFeatures+1)/2)
+    k = nClusters*(nFeatures + nFeatures*(nFeatures+1)/2 + 1) - 1
     return 2*k - 2*logLikelihood
 
 # class
-class gmm_particle_positions:
+class gmm_shape:
     
-    def __init__(self, nClusters, logThresh=1E-3,maxSteps=50,align=True, initClusters="GMM"):
+    def __init__(self, nClusters, logThresh=1E-3,maxSteps=50,align=True, initClusters="GMM", initIter=5):
         
         self.nClusters = nClusters
         self.logThresh = logThresh
         self.maxSteps = maxSteps
         self.align = align
-        self.initClusters = "GMM"
+        self.initClusters = initClusters
+        self.initIter = initIter
         
     @jit
     def fit(self,trajData):
@@ -290,9 +308,23 @@ class gmm_particle_positions:
         elif (self.initClusters == "BGMM"): 
             bgmm = mixture.BayesianGaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))
             self.clusters = bgmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
+            score = bgmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
+            for i in range(self.initIter-1):
+                bgmm = mixture.BayesianGaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))
+                tempScore = bgmm.score(self.trajData.reshape(self.nFrames,self.nFeatures)
+                if (tempScore > score):
+                    self.clusters = bgmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
+                    score = tempScore
         else: # use GMM without alignment
             gmm = mixture.GaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))
             self.clusters = gmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
+            score = gmm.score(self.trajData.reshape(self.nFrames,self.nFeatures))
+            for i in range(self.initIter-1):
+                gmm = mixture.GaussianMixture(n_components=self.nClusters, max_iter=200, covariance_type='full', init_params="kmeans").fit(self.trajData.reshape(self.nFrames,self.nFeatures))  
+                tempScore = gmm.score(self.trajData.reshape(self.nFrames,self.nFeatures)
+                if (tempScore > score):
+                    self.clusters = gmm.predict(self.trajData.reshape(self.nFrames,self.nFeatures))
+                    score = tempScore
         # compute average and covariance of initial clustering
         for k in range(self.nClusters):
             indeces = np.where(self.clusters == k)[0]
@@ -307,30 +339,24 @@ class gmm_particle_positions:
         logLikelihoodArray = np.empty(self.maxSteps,dtype=np.float64)
         while step < self.maxSteps and logLikeDiff > self.logThresh:
             # Expectation step
-            for k in range(self.nClusters):
-                # align the entire trajectory to each cluster mean if requested
-                if self.align==True:
-                    self.trajData = traj_align(self.trajData,self.centers[k])
-                self.likelihood[k,:] = multivariate_normal.pdf(x=self.trajData.reshape(self.nFrames,self.nFeatures), mean=self.centers[k].reshape(self.nFeatures), cov=self.covar[k],allow_singular=True)
-            # assign clusters based on largest likelihood (probability density)
-            self.clusters = np.argmax(self.likelihood, axis = 0)
+            self.likelihood = expectation(self.trajData, self.centers, self.covar)
+            # compute log likelihood of this step
             logLikelihoodArray[step] = compute_log_likelihood(self.weights,self.likelihood)
             print(step, self.weights, logLikelihoodArray[step])
             # Maximum Likelihood Optimization
-            normalization = np.power(np.sum([self.likelihood[i] * self.weights[i] for i in range(self.nClusters)], axis=0),-1)
-            for k in range(self.nClusters):
-                # use the current values for the parameters to evaluate the posterior
-                # probabilities of the data to have been generanted by each gaussian
-                b = (self.likelihood[k] * self.weights[k])*normalization
-                # update mean and variance
-                self.centers[k], self.covar[k] = traj_iterative_average_covar_weighted(self.trajData, b, self.centers[k])
-                # update the weights
-                self.weights[k] = np.mean(b)
+            self.centers, self.covar, self.weights = maximum_likelihood_opt(self.weights, self.likelihood, self.centers, self.trajData)
+            # compute convergence criteria
             if step>0:
                 logLikeDiff = np.abs(logLikelihoodArray[step] - logLikelihoodArray[step-1])
             step += 1
+        # assign clusters based on largest likelihood (probability density)
+        self.clusters = np.argmax(self.likelihood, axis = 0)
+        # save logLikelihood
         self.logLikelihood = logLikelihoodArray[step-1] 
-        # center trajectory around averages
+        # align averages to the first average
+        for k in range(1,self.nClusters):
+            self.centers[k] = kabsch_rotate(self.centers[k], self.centers[0])
+        # align clusters to averages
         for k in range(self.nClusters):
             indeces = np.where(self.clusters == k)[0]
             self.trajData[indeces] = traj_align(self.trajData[indeces],self.centers[k])
@@ -338,8 +364,8 @@ class gmm_particle_positions:
         self.silhouette_score = metrics.silhouette_score(self.trajData.reshape(self.nFrames,self.nFeatures), self.clusters)
         self.ch_score = metrics.calinski_harabasz_score(self.trajData.reshape(self.nFrames,self.nFeatures), self.clusters)
         self.db_score = metrics.davies_bouldin_score(self.trajData.reshape(self.nFrames,self.nFeatures), self.clusters)
-        self.bic = compute_bic(self.nFeatures, self.nClusters, self.nFrames, self.logLikelihood)
-        self.aic = compute_aic(self.nFeatures, self.nClusters, self.logLikelihood)
+        self.bic = compute_bic(self.nFeatures-6, self.nClusters, self.nFrames, self.logLikelihood)
+        self.aic = compute_aic(self.nFeatures-6, self.nClusters, self.logLikelihood)
 
     def predict(self,trajData):
         # get metadata from trajectory data
@@ -359,3 +385,4 @@ class gmm_particle_positions:
             indeces = np.where(clusters == k)[0]
             trajData[indeces] = traj_align(trajData[indeces],self.centers[k])
         return clusters, trajData
+
