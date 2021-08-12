@@ -221,7 +221,7 @@ class gmm_shape:
         for k in range(self.nClusters):
             # align the entire trajectory to each cluster mean
             trajData = traj_tools.traj_align(trajData,self.centers[k])
-            likelihood[k,:] = multivariate_normal.pdf(x=trajData.reshape(nFrames,self.nFeatures), mean=self.centers[k].reshape(self.nFeatures), cov=self.covar[k],allow_singular=True)
+            likelihood[k,:] = multivariate_normal.pdf(x=trajData.reshape(nFrames,self.nFeatures), mean=self.centers[k].reshape(self.nFeatures), cov=self.var[k],allow_singular=True)
         # assign clusters based on largest likelihood (probability density)
         clusters = np.argmax(likelihood, axis = 0)
         # center trajectory around averages
