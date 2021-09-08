@@ -71,7 +71,7 @@ def expectation(trajData, centers, covar):
     for k in range(nClusters):
         # align the entire trajectory to each cluster mean if requested
         trajData = traj_tools.traj_align_weighted_kabsch(trajData,centers[k],covar[k])
-        lnLikelihood[k,:] = ln_multivariate_NxN_gaussian_pdf(trajData.reshape(nFrames,nFeatures), centers[k].reshape(nFeatures), covar[k])
+        lnLikelihood[k,:] = ln_multivariate_NxN_gaussian_pdf(trajData, centers[k], covar[k])
     return lnLikelihood
 
 #@jit
@@ -101,15 +101,17 @@ def multivariate_gaussian_pdf(x, mu, sigma):
 
 #@jit
 def ln_multivariate_NxN_gaussian_pdf(x, mu, sigma):
-    sigma3Nx3N = np.kron(sigma,np.identity(3))
-    lpdet, precision = pseudo_lpdet_inv(sigma3Nx3N)
+    lpdet, precision = pseudo_lpdet_inv(sigma)
     nSamples = x.shape[0]
     nDim = x.shape[1]
-    lnnorm = -0.5*(nDim*np.log(2.0*np.pi)+lpdet)
-    mvG = np.empty(nSamples,dtype=np.float64)
+    lnnorm = -1.5*(nDim*np.log(2.0*np.pi)+lpdet)
+    mvG = np.zeros(nSamples,dtype=np.float64)
     for i in range(nSamples):
         diffV = x[i] - mu
-        mvG[i] = -0.5*np.dot(diffV.T,np.dot(precision,diffV)) + lnnorm
+        for j in range(3):
+            mvG[i] += np.dot(diffV[:,j],np.dot(precision,diffV[:,j]))
+        mvG[i] *= -0.5
+        mvG[i] += lnnorm
     return mvG
 
 @jit(nopython=True)
@@ -243,7 +245,7 @@ class gmm_shape_weighted:
         for k in range(self.nClusters):
             # align the entire trajectory to each cluster mean
             trajData = traj_tools.traj_align_weighted_kabsch(trajData,self.centers[k],self.covar[k])
-            lnLikelihood[k,:] = ln_multivariate_NxN_gaussian_pdf(trajData.reshape(nFrames,self.nFeatures), centers[k].reshape(self.nFeatures), covar[k])
+            lnLikelihood[k,:] = ln_multivariate_NxN_gaussian_pdf(trajData, centers[k], covar[k])
         # assign clusters based on largest likelihood (probability density)
         clusters = np.argmax(lnLikelihood, axis = 0)
         # center trajectory around averages

@@ -251,7 +251,8 @@ class gmm_shape_both:
                 self.clusters[i] = i*self.nClusters // self.nFrames
         elif (self.initClusters == "random"):
             dists = np.empty((self.nFrames,self.nClusters))
-            randFrames = np.random.randint(self.nFrames,size=self.nClusters) # can this give two of the same values?
+            #randFrames = np.random.randint(self.nFrames,size=self.nClusters) # can this give two of the same values?
+            randFrames = random.sample(xrange(self.nFrames),self.nClusters) 
             self.centers = np.copy(self.trajData[randFrames,:,:])
             # make initial clustering based on RMSD distance from centers
             # measure distance to every center
