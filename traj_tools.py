@@ -396,7 +396,8 @@ def traj_iterative_average_covar_weighted_weighted_kabsch(trajData, weights, pre
         for ts in range(nFrames):
             disp = alignedPos[ts] - newAvg
             covar += weights[ts]*np.dot(disp,disp.T)
-        kabschWeights = np.linalg.pinv(covar/3,rcond=1e-10)
+        covar /= 3.0
+        kabschWeights = np.linalg.pinv(covar,rcond=1e-10)
         # determine rmsd between consecutive average structures
         avgRmsd = weight_kabsch_dist_align(avg,newAvg,kabschWeights)
         # copy new avg

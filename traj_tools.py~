@@ -10,6 +10,83 @@ gammaThresh = 1E-10
 eigenValueThresh = 1E-10
 
 @jit(nopython=True)
+def sample_variance(zeroMeanDataArray,norm):
+    # meta data from array
+    nDataPoints = zeroMeanDataArray.shape[0]
+    # zero variance
+    var = np.float64(0.0)
+    for i in range(nDataPoints):
+        var += zeroMeanDataArray[i]**2
+    return var/norm
+
+
+@jit(nopython=True)
+def weight_kabsch_dist_align(x1, x2, weights):
+    x1_prime = weight_kabsch_rotate(x1, x2, weights)
+    dist = 0.0
+    for i in range(3):
+        disp = x1_prime[:,i] - x2[:,i]
+        dist += np.dot(disp,np.dot(weights,disp))
+    return dist
+
+@jit(nopython=True)
+def weight_kabsch_dist(x1, x2, weights):
+    dist = 0.0
+    for i in range(3):
+        disp = x1[:,i] - x2[:,i]
+        dist += np.dot(disp,np.dot(weights,disp))
+    return dist
+
+@jit(nopython=True)
+def pseudo_lpdet_inv(sigma):
+    N = sigma.shape[0]
+    e, v = np.linalg.eigh(sigma)
+    precision = np.zeros(sigma.shape,dtype=np.float64)
+    lpdet = 0.0
+    rank = 0
+    for i in range(N):
+        if (e[i] > eigenValueThresh):
+            lpdet += np.log(e[i])
+            precision += 1.0/e[i]*np.outer(v[:,i],v[:,i])
+            rank += 1
+    return lpdet, precision, rank
+
+@jit(nopython=True)
+def weight_kabsch_log_lik(x, mu, covar):
+    # meta data
+    nFrames = x.shape[0]
+    # determine precision and pseudo determinant 
+    lpdet, precision, rank = pseudo_lpdet_inv(covar)
+    # compute log Likelihood for all points
+    logLik = 0.0
+    for i in range(nFrames):
+        #disp = x[i] - mu
+        for j in range(3):
+            disp = x[i,:,j] - mu[:,j]
+            logLik += np.dot(disp,np.dot(precision,disp))
+    logLik += 3 * nFrames * lpdet
+    logLik *= -0.5
+    return logLik, precision
+
+# old version
+# @jit(nopython=True)
+# def weight_kabsch_log_lik_v02(x, mu, covar):
+#    # meta data
+#    nFrames = x.shape[0]
+#    # get covar 3Nx3N
+#    covar3N = np.kron(covar,np.identity(3))
+#    # determine precision and pseudo determinant 
+#    lpdet, precision = pseudo_lpdet_inv(covar3N)
+#    # compute log Likelihood for all points
+#    logLik = 0.0
+#    for i in range(nFrames):
+#        disp = (x[i] - mu).flatten()
+#        logLik += np.dot(disp,np.dot(precision,disp))
+#    logLik +=  nFrames * lpdet
+#    logLik *= -0.5
+#    return logLik, precision
+
+@jit(nopython=True)
 def weight_kabsch_rotate(mobile, target, weights):
     correlation_matrix = np.dot(np.transpose(mobile), np.dot(weights, target))
     V, S, W_tr = np.linalg.svd(correlation_matrix)
@@ -95,51 +172,7 @@ def traj_remove_cog_translation(trajData):
 
 # compute the average structure and covariance from trajectory data
 @jit(nopython=True)
-def traj_iterative_average_weighted_kabsch_v02(trajData,thresh=1E-4,maxSteps=100):
-    # trajectory metadata
-    nFrames = trajData.shape[0]
-    nAtoms = trajData.shape[1]
-    nDim = trajData.shape[2]
-    # Initialize with uniform weighted Kabsch
-    avg, alignedPos = traj_iterative_average(trajData,thresh)
-    # Compute Kabsch Weights
-    disp = alignedPos.reshape(nFrames,nAtoms*nDim) - avg.reshape(nAtoms*nDim)
-    covar = np.dot(disp.T,disp)/nFrames
-    kabschWeights = np.linalg.pinv(trace_3Nx3N(covar),rcond=1e-10)
-    # perform iterative alignment and average to converge average
-    avgRmsd = 1.0 + thresh
-    step = 0
-    while avgRmsd > thresh and step < maxSteps:
-        # rezero new average
-        newAvg = np.zeros((nAtoms,nDim),dtype=np.float64)
-        # align trajectory to average and accumulate new average
-        for ts in range(nFrames):
-            alignedPos[ts] = weight_kabsch_rotate(alignedPos[ts], avg, kabschWeights)
-            newAvg += alignedPos[ts]
-        # finish average
-        newAvg /= nFrames
-        # compute new Kabsch Weights
-        kabschWeights = np.zeros((nAtoms,nAtoms),dtype=np.float64)
-        for atom1 in range(nAtoms):
-            for atom2 in range(atom1,nAtoms):
-                for ts in range(nFrames):
-                    disp1 = alignedPos[ts,atom1] - newAvg[atom1]
-                    disp2 = alignedPos[ts,atom2] - newAvg[atom2]
-                    kabschWeights[atom1,atom2] += np.dot(disp1,disp2)
-                kabschWeights[atom2,atom1] = kabschWeights[atom1,atom2]
-        kabschWeights /= nFrames
-        kabschWeights = np.linalg.pinv(kabschWeights,rcond=1e-10)
-        # compute RMSD between averages
-        avgRmsd = weight_kabsch_rmsd(avg,newAvg,kabschWeights)
-        print(step,avgRmsd)
-        avg = np.copy(newAvg)
-        step += 1
-    # return average structure and aligned trajectory
-    return avg, alignedPos
-
-# compute the average structure and covariance from trajectory data
-@jit(nopython=True)
-def traj_iterative_average_covar_weighted_kabsch_v02(trajData,thresh=1E-4,maxSteps=100):
+def traj_iterative_average_covar_weighted_kabsch_v02(trajData,thresh=1E-8,maxSteps=300):
     # trajectory metadata
     nFrames = trajData.shape[0]
     nAtoms = trajData.shape[1]
@@ -170,13 +203,63 @@ def traj_iterative_average_covar_weighted_kabsch_v02(trajData,thresh=1E-4,maxSte
         for ts in range(nFrames):
             disp = alignedPos[ts] - newAvg
             covar += np.dot(disp,disp.T)    
-        covar /= nFrames
-        kabschWeights = np.linalg.pinv(covar,rcond=1e-10)
-        # compute RMSD between averages
-        avgRmsd = weight_kabsch_rmsd(avg,newAvg,kabschWeights)
+        covar /= nDim*(nFrames-1)
+        # compute log likelihood
+        logLik, kabschWeights = weight_kabsch_log_lik(alignedPos, newAvg, covar)
+        #kabschWeights = np.linalg.pinv(covar,rcond=1e-10)
+        # compute Distance between averages
+        avgRmsd = weight_kabsch_dist_align(avg,newAvg,kabschWeights)
         avg = np.copy(newAvg)
         step += 1
-    return avg, covar
+        #print(step, avgRmsd, logLik)
+    return alignedPos, avg, covar
+
+# compute the average structure and covariance from trajectory data
+@jit(nopython=True)
+def traj_iterative_average_weighted_kabsch_v02(trajData,thresh=1E-4,maxSteps=200):
+    # trajectory metadata
+    nFrames = trajData.shape[0]
+    nAtoms = trajData.shape[1]
+    nDim = trajData.shape[2]
+    # Initialize with uniform weighted Kabsch
+    avg, alignedPos = traj_iterative_average(trajData,thresh)
+    # Compute Kabsch Weights
+    disp = alignedPos.reshape(nFrames,nAtoms*nDim) - avg.reshape(nAtoms*nDim)
+    covar = np.dot(disp.T,disp)/nFrames
+    kabschWeights = np.linalg.pinv(trace_3Nx3N(covar),rcond=1e-10)
+    # perform iterative alignment and average to converge average
+    avgRmsd = 1.0 + thresh
+    step = 0
+    while avgRmsd > thresh and step < maxSteps:
+        # rezero new average
+        newAvg = np.zeros((nAtoms,nDim),dtype=np.float64)
+        # align trajectory to average and accumulate new average
+        for ts in range(nFrames):
+            alignedPos[ts] = weight_kabsch_rotate(alignedPos[ts], avg, kabschWeights)
+            newAvg += alignedPos[ts]
+        # finish average
+        newAvg /= nFrames
+        # compute new Kabsch Weights
+        kabschWeights = np.zeros((nAtoms,nAtoms),dtype=np.float64)
+        for ts in range(nFrames):
+            disp = alignedPos[ts] - newAvg
+            kabschWeights += np.dot(disp,disp.T)
+#        for atom1 in range(nAtoms):
+#            for atom2 in range(atom1,nAtoms):
+#                for ts in range(nFrames):
+#                    disp1 = alignedPos[ts,atom1] - newAvg[atom1]
+#                    disp2 = alignedPos[ts,atom2] - newAvg[atom2]
+#                    kabschWeights[atom1,atom2] += np.dot(disp1,disp2)
+#                kabschWeights[atom2,atom1] = kabschWeights[atom1,atom2]
+        kabschWeights /= 3*(nFrames-1)
+        kabschWeights = np.linalg.pinv(kabschWeights,rcond=1e-10)
+        # compute RMSD between averages
+        avgRmsd = weight_kabsch_dist_align(avg,newAvg,kabschWeights)
+        #print(step,avgRmsd)
+        avg = np.copy(newAvg)
+        step += 1
+    # return average structure and aligned trajectory
+    return avg, alignedPos
 
 # compute the average structure from trajectory data
 @jit(nopython=True)
@@ -240,10 +323,10 @@ def traj_iterative_average_covar(trajData,thresh=1E-10):
     covar = np.zeros((nAtoms*nDim,nAtoms*nDim),dtype=np.float64)
     # loop over trajectory and compute average and covariance
     for ts in range(nFrames):
-        disp = alignedPos[ts].flatten()-avg.flatten()
+        disp = (alignedPos[ts]-avg).flatten()
         covar += np.outer(disp,disp)
     # finish average
-    covar /= nFrames
+    covar /= (nFrames-1)
     return avg, covar
 
 # compute the average structure from weighted trajectory data
@@ -256,6 +339,7 @@ def traj_iterative_average_weighted(trajData, weights, prevAvg=None, thresh=1E-1
     nFeatures = nAtoms*nDim
     # determine normalization
     norm = np.power(np.sum(weights),-1)
+    weights *= norm
     # create numpy array of aligned positions
     alignedPos = np.copy(trajData)
     # Initialize average 
@@ -273,8 +357,7 @@ def traj_iterative_average_weighted(trajData, weights, prevAvg=None, thresh=1E-1
             # align to average
             alignedPos[ts] = kabsch_rotate(alignedPos[ts], avg)
             newAvg += weights[ts]*alignedPos[ts]
-        # finish average
-        newAvg *= norm
+        # compute RMSD between averages
         avgRmsd = rmsd_kabsch(avg,newAvg)
         # copy new avg
         avg = np.copy(newAvg)
@@ -282,7 +365,7 @@ def traj_iterative_average_weighted(trajData, weights, prevAvg=None, thresh=1E-1
 
 # compute the average structure and covariance from weighted trajectory data
 @jit(nopython=True)
-def traj_iterative_average_covar_weighted_weighted_kabsch(trajData, weights, prevAvg, preCovar, thresh=1E-4):
+def traj_iterative_average_covar_weighted_weighted_kabsch(trajData, weights, prevAvg, preCovar, thresh=1E-4, maxSteps=100):
     # trajectory metadata
     nFrames = trajData.shape[0]
     nAtoms = trajData.shape[1]
@@ -295,11 +378,12 @@ def traj_iterative_average_covar_weighted_weighted_kabsch(trajData, weights, pre
     alignedPos = np.copy(trajData)
     # Initialize average with previous average
     avg = np.copy(prevAvg)
-    # set kasbch weights to current NxN covars
+    # set kasbch weights to inverse of current NxN covars
     kabschWeights = np.linalg.pinv(preCovar,rcond=1e-10)
     # perform iterative alignment and average to converge average
     avgRmsd = 2*thresh
-    while avgRmsd > thresh:
+    step = 0
+    while avgRmsd > thresh and step < maxSteps:
         # rezero new average
         newAvg = np.zeros((nAtoms,nDim),dtype=np.float64)
         # align trajectory to average and accumulate new average
@@ -312,11 +396,12 @@ def traj_iterative_average_covar_weighted_weighted_kabsch(trajData, weights, pre
         for ts in range(nFrames):
             disp = alignedPos[ts] - newAvg
             covar += weights[ts]*np.dot(disp,disp.T)
-        kabschWeights = np.linalg.pinv(covar,rcond=1e-10)
+        kabschWeights = np.linalg.pinv(covar/3,rcond=1e-10)
         # determine rmsd between consecutive average structures
-        avgRmsd = weight_kabsch_rmsd(avg,newAvg,kabschWeights)
+        avgRmsd = weight_kabsch_dist_align(avg,newAvg,kabschWeights)
         # copy new avg
         avg = np.copy(newAvg)
+        step += 1
 
     return avg, covar
 
@@ -412,7 +497,9 @@ def traj_iterative_average_var(trajData,thresh=1E-10):
         newAvg /= nFrames
         avgRmsd = rmsd_kabsch(avg,newAvg)
         avg = np.copy(newAvg)
-    var = np.mean(np.power(alignedPos-avg,2))
+    #var = np.mean(np.power(alignedPos-avg,2))
+    # Compute variance correcting for normalizing by 3(nAtoms-1)*(nFrames-1)
+    var = sample_variance((alignedPos-avg).flatten(),nDim*(nAtoms-1)*(nFrames-1))  
     return avg, var
 
 # compute the average structure and variance from weighted trajectory data
@@ -446,7 +533,9 @@ def traj_iterative_average_var_weighted(trajData, weights, prevAvg, thresh=1E-10
         avg = np.copy(newAvg)
     # loop over trajectory and compute variance
     var = np.float64(0.0)
+    varNorm = 3*nAtoms-3
     for ts in range(nFrames):
-        var += weights[ts]*np.mean(np.power(alignedPos[ts].flatten()-avg.flatten(),2))
+        #var += weights[ts]*np.mean(np.power(alignedPos[ts].flatten()-avg.flatten(),2))
+        var += weights[ts]*sample_variance((alignedPos[ts]-avg).flatten(),varNorm)
     return avg, var
 
