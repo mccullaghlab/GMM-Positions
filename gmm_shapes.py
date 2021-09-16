@@ -213,7 +213,7 @@ class gmm_shape:
             for k in range(self.nClusters):
                 # align the entire trajectory to each cluster mean
                 trajData = traj_tools.traj_align_weighted_kabsch(trajData,self.centers[k],self.covar[k])
-                lnLikelihood[k,:] = gmm_shapes_weighted_library.ln_multivariate_NxN_gaussian_pdf(trajData, centers[k], covar[k])
+                lnLikelihood[k,:] = gmm_shapes_weighted_library.ln_multivariate_NxN_gaussian_pdf(trajData, self.centers[k], self.covar[k])
             # assign clusters based on largest likelihood (probability density)
             clusters = np.argmax(lnLikelihood, axis = 0)
             # center trajectory around averages
@@ -235,14 +235,14 @@ class gmm_shape:
             # Expectation step
             for k in range(self.nClusters):
                 # align the entire trajectory to each cluster mean
-                trajData = traj_tools.traj_align(trajData,self.centers[k],self.covar[k])
-                lnLikelihood[k,:] = gmm_shapes_uniform_library.ln_spherical_gaussian_pdf(trajData.reshape(nFrames,self.nFeatures), centers[k].reshape(self.nFeatures), var[k])
+                trajData = traj_tools.traj_align(trajData,self.centers[k])
+                lnLikelihood[k,:] = gmm_shapes_uniform_library.ln_spherical_gaussian_pdf(trajData.reshape(nFrames,self.nFeatures), self.centers[k].reshape(self.nFeatures), self.var[k])
             # assign clusters based on largest likelihood (probability density)
             clusters = np.argmax(lnLikelihood, axis = 0)
             # center trajectory around averages
             for k in range(self.nClusters):
                 indeces = np.argwhere(clusters == k).flatten()
-                trajData[indeces] = traj_tools.traj_align(trajData[indeces],self.centers[k],self.covar[k])
+                trajData[indeces] = traj_tools.traj_align(trajData[indeces],self.centers[k])
             return clusters, trajData
         else:
             print("Uniform shape-GMM must be fitted before you can predict.")
