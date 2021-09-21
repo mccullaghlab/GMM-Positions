@@ -5,12 +5,19 @@ import warnings
 warnings.filterwarnings('ignore')
 import random
 import traj_tools
+#from scipy.special import logsumexp
 
 numericThresh = 1E-150
 logNumericThresh = np.log(numericThresh)
 gammaThresh = 1E-15
 eigenValueThresh = 1E-10
 
+
+
+@jit(nopython=True)
+def logsumexp(x):
+    c = x.max()
+    return c + np.log(np.sum(np.exp(x - c)))
 
 ##
 @jit(nopython=True)
@@ -36,10 +43,7 @@ def uniform_sgmm_log_likelihood(trajData,clusters):
     # compute log likelihood
     logLikelihood = 0.0
     for i in range(nFrames):
-        normalization = 0.0
-        for k in range(nClusters):
-            normalization += np.exp((lnLikelihood[k,i] + lnWeights[k]))
-        logLikelihood += np.log(normalization)
+        logLikelihood += logsumexp(lnLikelihood[:,i]+lnWeights[k])
     return logLikelihood
 ##
 @jit
@@ -68,6 +72,7 @@ def init_random(trajData, nClusters):
     return clusters
 
 ##
+@jit(nopython=True)
 def maximum_likelihood_opt_uniform(lnWeights,lnLikelihood,centers,trajData):
     # get metadata from trajectory data
     nFrames = trajData.shape[0]
@@ -78,36 +83,38 @@ def maximum_likelihood_opt_uniform(lnWeights,lnLikelihood,centers,trajData):
     # declare cluster variances
     var = np.empty(nClusters,dtype=np.float64)
     logLikelihood = float(0.0)
-    logNorm = []
-    indeces = []
+    logNorm = np.empty(nFrames,dtype=np.float64)
     count = 0
     for i in range(nFrames):
-        normalization = np.float128(0.0)
-        for k in range(nClusters):
-            normalization += np.exp(np.float128(lnLikelihood[k,i] + lnWeights[k]))
-        if (normalization > numericThresh) :
-            logNorm.append(np.log(normalization))
-            indeces.append(i)
-            logLikelihood += np.float64(logNorm[count])
-            count += 1
-    nNonzeroFrames = len(indeces)
+        #logLikelihood += logsumexp(lnLikelihood[:,i]+lnWeights[k])
+        logNorm[i] = logsumexp(lnLikelihood[:,i]+lnWeights)
+        logLikelihood += logNorm[i]
+#        normalization = np.float128(0.0)
+#        for k in range(nClusters):
+#            normalization += np.exp(np.float128(lnLikelihood[k,i] + lnWeights[k]))
+#        if (normalization > numericThresh) :
+#            logNorm.append(np.log(normalization))
+#            indeces.append(i)
+#            logLikelihood += np.float64(logNorm[count])
+#            count += 1
+#    nNonzeroFrames = len(indeces)
     #print("Number of nonzero frames:", nNonzeroFrames, " out of ", nFrames)
-    indeces = np.array(indeces,dtype=np.int)
-    logNorm = np.array(logNorm,dtype=np.float64)
+#    indeces = np.array(indeces,dtype=np.int)
+#    logNorm = np.array(logNorm,dtype=np.float64)
     for k in range(nClusters):
         # use the current values for the parameters to evaluate the posterior
         # probabilities of the data to have been generanted by each gaussian
         # the following step can be numerically unstable
-        loggamma = lnLikelihood[k,indeces] + lnWeights[k] - logNorm
+        loggamma = lnLikelihood[k] + lnWeights[k] - logNorm
         #newIndeces = np.argwhere(loggamma > logNumericThresh)
         gamma = np.exp(loggamma).astype(np.float64)
         #print(gamma)
         # gamma should be between 0 and 1
-        gamma[np.argwhere(gamma > 1.0)] = 1.0
+#        gamma[np.argwhere(gamma > 1.0)] = 1.0
         # will only use frames that have greater than gammaThresh weight
         gamma_indeces = np.argwhere(gamma > gammaThresh).flatten()
         # update mean and variance
-        centers[k], var[k] = traj_tools.traj_iterative_average_var_weighted(trajData[indeces[gamma_indeces]], gamma[gamma_indeces], centers[k])
+        centers[k], var[k] = traj_tools.traj_iterative_average_var_weighted(trajData[gamma_indeces], gamma[gamma_indeces], centers[k])
         # update the weights
         lnWeights[k] = np.log(np.mean(gamma))
         #
@@ -135,8 +142,9 @@ def expectation_uniform(trajData, centers, var):
 @jit(nopython=True)
 def ln_spherical_gaussian_pdf(x, mu, sigma):
     nSamples = x.shape[0]
-    nDim = x.shape[1]
-    lnnorm = -0.5*nDim*(np.log(2.0*np.pi*sigma))
+    nDim = x.shape[1]-3
+#    lnnorm = -0.5*nDim*(np.log(2.0*np.pi*sigma))
+    lnnorm = -0.5*nDim*(np.log(sigma))
     mvG = np.empty(nSamples,dtype=np.float64)
     multiplier = -0.5/sigma
     for i in range(nSamples):

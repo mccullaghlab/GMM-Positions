@@ -12,7 +12,12 @@ logNumericThresh = np.log(numericThresh)
 gammaThresh = 1E-15
 eigenValueThresh = 1E-10
 
-#@jit
+@jit(nopython=True)
+def logsumexp(x):
+    c = x.max()
+    return c + np.log(np.sum(np.exp(x - c)))
+
+@jit(nopython=True)
 def maximum_likelihood_opt_weighted(lnWeights,lnLikelihood,centers,trajData,covar,kabschThresh, kabschMaxSteps):
     # get metadata from trajectory data
     nFrames = trajData.shape[0]
@@ -22,37 +27,26 @@ def maximum_likelihood_opt_weighted(lnWeights,lnLikelihood,centers,trajData,cova
     nClusters = lnWeights.size
     # Compute the normaliztion constant and overall loglikelihood
     logLikelihood = float(0.0)
-    logNorm = []
-    indeces = []
+    logNorm = np.empty(nFrames,dtype=np.float64)
     count = 0
     for i in range(nFrames):
-        normalization = np.float128(0.0)
-        for k in range(nClusters):
-            normalization += np.exp(np.float128(lnLikelihood[k,i] + lnWeights[k]))
-        if (normalization > numericThresh) :
-            logNorm.append(np.log(normalization))
-            indeces.append(i)
-            logLikelihood += np.float64(logNorm[count])
-            count += 1
-    nNonzeroFrames = len(indeces)
-    #print("Number of nonzero frames:", nNonzeroFrames, " out of ", nFrames)
-    indeces = np.array(indeces,dtype=np.int)
-    logNorm = np.array(logNorm,dtype=np.float64)
+        logNorm[i] = logsumexp(lnLikelihood[:,i]+lnWeights)
+        logLikelihood += logNorm[i]
     for k in range(nClusters):
         # use the current values for the parameters to evaluate the posterior
         # probabilities of the data to have been generanted by each gaussian
         # the following step can be numerically unstable
-        loggamma = lnLikelihood[k,indeces] + lnWeights[k] - logNorm
+        loggamma = lnLikelihood[k] + lnWeights[k] - logNorm
         #newIndeces = np.argwhere(loggamma > logNumericThresh)
         gamma = np.exp(loggamma).astype(np.float64)
         #print(gamma)
         # gamma should be between 0 and 1
-        gamma[np.argwhere(gamma > 1.0)] = 1.0
+#        gamma[np.argwhere(gamma > 1.0)] = 1.0
         # will only use frames that have greater than gammaThresh weight
         gamma_indeces = np.argwhere(gamma > gammaThresh).flatten()
         # update mean and variance
         #print(gamma)
-        centers[k], covar[k] = traj_tools.traj_iterative_average_covar_weighted_weighted_kabsch(trajData[indeces[gamma_indeces]], gamma[gamma_indeces], centers[k], covar[k],thresh=kabschThresh,maxSteps=kabschMaxSteps)
+        centers[k], covar[k] = traj_tools.traj_iterative_average_covar_weighted_weighted_kabsch(trajData[gamma_indeces], gamma[gamma_indeces], centers[k], covar[k],thresh=kabschThresh,maxSteps=kabschMaxSteps)
         # update the weights
         lnWeights[k] = np.log(np.mean(gamma))
     return centers, covar, lnWeights, logLikelihood
@@ -96,7 +90,7 @@ def ln_multivariate_NxN_gaussian_pdf(x, mu, sigma):
     # compute pseudo determinant and inverse of sigma
     lpdet, precision = pseudo_lpdet_inv(sigma)
     # compute log of normalization constant
-    lnnorm = -1.5*(nDim*np.log(2.0*np.pi)+lpdet)
+    lnnorm = -1.5*(lpdet)
     # declare array of log multivariate Gaussian values - one for each sample
     mvG = np.zeros(nSamples,dtype=np.float64)
     for i in range(nSamples):
@@ -121,7 +115,7 @@ def weighted_sgmm_log_likelihood(trajData,clusters):
     # compute likelihood of each frame at each Gaussian
     for k in range(nClusters):
         indeces = np.argwhere(clusters == k).flatten()
-        center, covar = traj_tools.traj_iterative_average_covar_weighted_kabsch_v02(trajData[indeces])[1:]
+        center, covar = traj_tools.traj_iterative_average_covar_weighted_kabsch(trajData[indeces])[1:]
         # initialize weights as populations of clusters
         lnWeights[k] = np.log(indeces.size/nFrames)
         # align the entire trajectory to each cluster mean if requested

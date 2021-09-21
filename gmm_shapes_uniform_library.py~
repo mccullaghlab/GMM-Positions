@@ -135,7 +135,7 @@ def expectation_uniform(trajData, centers, var):
 @jit(nopython=True)
 def ln_spherical_gaussian_pdf(x, mu, sigma):
     nSamples = x.shape[0]
-    nDim = x.shape[1]
+    nDim = x.shape[1]-3
     lnnorm = -0.5*nDim*(np.log(2.0*np.pi*sigma))
     mvG = np.empty(nSamples,dtype=np.float64)
     multiplier = -0.5/sigma

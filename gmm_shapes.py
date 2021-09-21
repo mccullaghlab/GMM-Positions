@@ -22,7 +22,7 @@ eigenValueThresh = 1E-10
 # class
 class gmm_shape:
 
-    def __init__(self, nClusters, logThresh=1E-3,maxSteps=200,align=True, initClustersMethod="random", initIter=5, kabschThresh=1E-10, kabschMaxSteps=500):
+    def __init__(self, nClusters, logThresh=1E-3,maxSteps=200,align=True, initClustersMethod="random", initIter=5, kabschThresh=1E-3, kabschMaxSteps=500):
         
         self.nClusters = nClusters
         self.logThresh = logThresh
@@ -156,7 +156,7 @@ class gmm_shape:
         for k in range(self.nClusters):
             indeces = np.argwhere(self.clusters == k).flatten()
             self.weights[k] = indeces.size / self.nFrames
-            self.centers[k], self.covar[k] = traj_tools.traj_iterative_average_covar_weighted_kabsch_v02(self.trajData[indeces],thresh=self.kabschThresh,maxSteps=self.kabschMaxSteps)[1:]
+            self.centers[k], self.covar[k] = traj_tools.traj_iterative_average_covar_weighted_kabsch(self.trajData[indeces],thresh=self.kabschThresh,maxSteps=self.kabschMaxSteps)[1:]
         # 
         print("Weights from initial clusters in fit_weighted:", self.weights)
         self.lnWeights = np.log(self.weights)
