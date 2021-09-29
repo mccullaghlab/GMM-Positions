@@ -1,0 +1,8 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+src/size_and_shape_GMM_mccullaghlab.egg-info/PKG-INFO
+src/size_and_shape_GMM_mccullaghlab.egg-info/SOURCES.txt
+src/size_and_shape_GMM_mccullaghlab.egg-info/dependency_links.txt
+src/size_and_shape_GMM_mccullaghlab.egg-info/top_level.txt
