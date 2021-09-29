@@ -16,16 +16,16 @@ import gmm_shapes_weighted_library
 
 # class
 class ShapeGMM:
-"""
-ShapeGMM is a class that can be used to perform Gaussian Mixture Model clustering in size-and-shape space.
-The class is designed to mimic similar clustering methods implemented in sklearn.  The model is first initialized
-and then fit with supplied data.  Fit parameters for the model include average structures and (co)variances.
-Once fit, the model can be used to predict clustering on an alternative (but same feature space size) data set.
+    """
+    ShapeGMM is a class that can be used to perform Gaussian Mixture Model clustering in size-and-shape space.
+    The class is designed to mimic similar clustering methods implemented in sklearn.  The model is first initialized
+    and then fit with supplied data.  Fit parameters for the model include average structures and (co)variances.
+    Once fit, the model can be used to predict clustering on an alternative (but same feature space size) data set.
 
 
-Author: Martin McCullagh
-Date: 9/27/2021
-"""
+    Author: Martin McCullagh
+    Date: 9/27/2021
+    """
     def __init__(self, n_clusters, log_thresh=1E-3,max_steps=200, init_cluster_method="random", init_iter=5, kabsch_thresh=1E-1, kabsch_max_steps=500, verbose=False):
         """
         Initialize size-and-shape GMM.
@@ -47,9 +47,9 @@ Date: 9/27/2021
         self.kabsch_thresh = kabsch_thresh                      # float
         self.kabsch_max_steps = kabsch_max_steps                # integer
         self.verbose = verbose                                  # boolean
-        self.init_clusters = False                              # boolean tracking if clusters have been initialized or not.
-        self.gmm_uniform = False                                # boolean tracking if uniform GMM has been fit.
-        self.gmm_weighted = False                               # boolean tracking if weighted GMM has been fit.
+        self.init_clusters_flag = False                         # boolean tracking if clusters have been initialized or not.
+        self.gmm_uniform_flag = False                           # boolean tracking if uniform GMM has been fit.
+        self.gmm_weighted_flag = False                          # boolean tracking if weighted GMM has been fit.
 
     def fit_both(self,traj_data):
         # initialize clusterings
@@ -89,12 +89,12 @@ Date: 9/27/2021
                     maxLogLik = logLik
                     self.clusters = init_clusters
         # clusters have been initialized
-        self.init_clusters = True
+        self.init_clusters_flag = True
         
     # uniform fit
     def fit_uniform(self,traj_data):
         # Initialize clusters if they have not been already
-        if (self.init_clusters == False):
+        if (self.init_clusters_flag == False):
             self.init_clusters(traj_data)
         # declare some important arrays for the model
         self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
@@ -152,13 +152,13 @@ Date: 9/27/2021
         self.aic = gmm_shapes_uniform_library.compute_aic_uniform(self.n_features-6, self.n_clusters, self.logLikelihood_uniform)
         self.aic_uniform = self.aic
         # uniform has been performed
-        self.gmm_uniform = True
+        self.gmm_uniform_flag = True
 
     # weighted fit
     def fit_weighted(self,traj_data):
         
         # make sure clusters have been initialized
-        if (self.init_clusters == False):
+        if (self.init_clusters_flag == False):
             self.init_clusters(traj_data)
             # declare some arrays 
             self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
@@ -219,11 +219,11 @@ Date: 9/27/2021
         self.aic = gmm_shapes_weighted_library.compute_aic(self.n_atoms, self.n_dim, self.n_clusters, self.logLikelihood)
         self.aic_weighted = self.aic
         # weighted has been performed
-        self.gmm_weighted = True
+        self.gmm_weighted_flag = True
 
     # predict clustering of provided data based on prefit parameters from fit_weighted
     def predict_weighted(self,traj_data):
-        if self.gmm_weighted == True:
+        if self.gmm_weighted_flag == True:
             # get metadata from trajectory data
             n_frames = traj_data.shape[0]
             # declare likelihood array
@@ -247,7 +247,7 @@ Date: 9/27/2021
 
     # predict clustering of provided data based on prefit parameters from fit_uniform
     def predict_uniform(self,traj_data):
-        if self.gmm_uniform == True:
+        if self.gmm_uniform_flag == True:
             # get metadata from trajectory data
             n_frames = traj_data.shape[0]
             # declare likelihood array
