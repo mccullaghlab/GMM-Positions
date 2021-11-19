@@ -48,7 +48,7 @@ def maximum_likelihood_opt_weighted(ln_weights, cluster_frame_ln_likelihoods, ce
         centers[k], precisions[k], lpdets[k] = traj_tools.traj_iterative_average_precision_weighted_weighted_kabsch(traj_data[gamma_indeces], gamma[gamma_indeces], centers[k], precisions[k], lpdets[k], thresh=kabsch_thresh, max_steps=kabsch_max_steps)
         # update the weights
         ln_weights[k] = np.log(np.mean(gamma))
-    return centers, precisions, lpdets, ln_weights, log_likelihood
+    return centers, precisions, ln_weights, log_likelihood
 
 # Expectation step
 @jit(nopython=True)

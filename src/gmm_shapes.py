@@ -53,14 +53,14 @@ class ShapeGMM:
 
     def fit_both(self,traj_data):
         # initialize clusterings
-        self.init_clusters(traj_data)
+        traj_data = self.init_clusters(traj_data)
         # first uniform
-        self.fit_uniform(self.traj_data)
+        self.fit_uniform(traj_data)
         # followed by weighted
-        self.fit_weighted(self.traj_data)
+        self.fit_weighted(traj_data)
     
     # initialize clusters
-    def init_clusters(self,traj_data):
+    def init_clusters(self,traj_data, clusters):
         
         # get metadata
         self.n_frames = int(traj_data.shape[0])
@@ -71,7 +71,7 @@ class ShapeGMM:
         self.clusters = np.zeros(self.n_frames,dtype=np.int)
 
         # Center and align the entire trajectory to start using uniform Kabsch
-        self.traj_data = traj_tools.traj_iterative_average(traj_data)[1]
+        traj_data = traj_tools.traj_iterative_average(traj_data)[1]
 
         # make initial clustering based on input user choice (default is random)
         if (self.init_cluster_method == "uniform"):
@@ -79,29 +79,34 @@ class ShapeGMM:
                 self.clusters[i] = i*self.n_clusters // self.n_frames
         elif (self.init_cluster_method == "kmeans"):
             kmeans = kmeans_shapes.kmeans_shape(self.n_clusters,max_steps=self.max_steps)
-            kmeans.fit(self.traj_data)
+            kmeans.fit(traj_data)
             self.clusters = kmeans.clusters
+        elif (self.init_cluster_method == "read"):
+            # should affirm that there are n_frames clusters
+            self.clusters = clusters
         else: # default is random
             for i in range(self.init_iter):
-                init_clusters = gmm_shapes_uniform_library.init_random(self.traj_data,self.n_clusters)
-                logLik = gmm_shapes_uniform_library.uniform_sgmm_log_likelihood(self.traj_data,init_clusters)
+                init_clusters = gmm_shapes_uniform_library.init_random(traj_data,self.n_clusters)
+                logLik = gmm_shapes_uniform_library.uniform_sgmm_log_likelihood(traj_data,init_clusters)
                 if (i==0 or logLik > maxLogLik):
                     maxLogLik = logLik
                     self.clusters = init_clusters
         # clusters have been initialized
         self.init_clusters_flag = True
+        # 
+        return traj_data
         
     # uniform fit
-    def fit_uniform(self,traj_data):
+    def fit_uniform(self,traj_data, clusters = []):
         # Initialize clusters if they have not been already
         if (self.init_clusters_flag == False):
-            self.init_clusters(traj_data)
+            traj_data = self.init_clusters(traj_data)
         # declare some important arrays for the model
         self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
         self.var = np.empty(self.n_clusters,dtype=np.float64)
         self.likelihood = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
         self.weights = np.empty(self.n_clusters,dtype=np.float64)
-        self.ln_likelihood = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
+        self.cluster_frame_ln_likelihoods = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
         self.ln_weights = np.empty(self.n_clusters,dtype=np.float64)
     
         # compute average and covariance of initial clustering
@@ -109,7 +114,7 @@ class ShapeGMM:
             indeces = np.argwhere(self.clusters == k).flatten()
             # initialize weights as populations of clusters
             self.weights[k] = indeces.size/self.n_frames
-            self.centers[k],self.var[k] = traj_tools.traj_iterative_average_var(self.traj_data[indeces])
+            self.centers[k],self.var[k] = traj_tools.traj_iterative_average_var(traj_data[indeces])
         if (self.verbose == True):
             print("Weights from initial clusters in fit_uniform:", self.weights)
         self.ln_weights = np.log(self.weights)
@@ -117,64 +122,69 @@ class ShapeGMM:
         # perform Expectation Maximization
         logLikeDiff = 2*self.log_thresh
         step = 0
-        logLikelihoodArray = np.empty(self.max_steps,dtype=np.float64)
+        log_likelihoodArray = np.empty(self.max_steps,dtype=np.float64)
         while step < self.max_steps and logLikeDiff > self.log_thresh:
             # Expectation step
-            self.ln_likelihood = gmm_shapes_uniform_library.expectation_uniform(self.traj_data, self.centers, self.var)
+            self.cluster_frame_ln_likelihoods = gmm_shapes_uniform_library.expectation_uniform(traj_data, self.centers, self.var)
             # Maximum Likelihood Optimization
-            self.centers, self.var, self.ln_weights, logLikelihoodArray[step] = gmm_shapes_uniform_library.maximum_likelihood_opt_uniform(self.ln_weights, self.ln_likelihood, self.centers, self.traj_data)
+            self.centers, self.var, self.ln_weights, log_likelihoodArray[step] = gmm_shapes_uniform_library.maximum_likelihood_opt_uniform(self.ln_weights, self.cluster_frame_ln_likelihoods, self.centers, traj_data)
             if (self.verbose == True):
-                print(step, np.exp(self.ln_weights), logLikelihoodArray[step])
+                print(step, np.exp(self.ln_weights), log_likelihoodArray[step])
             # compute convergence criteria
             if step>0:
-                logLikeDiff = np.abs(logLikelihoodArray[step] - logLikelihoodArray[step-1])
+                logLikeDiff = np.abs(log_likelihoodArray[step] - log_likelihoodArray[step-1])
             step += 1
         # recompute weights
         self.weights = np.exp(self.ln_weights).astype(np.float64)
         self.weights_uniform = np.copy(self.weights)
         # assign clusters based on largest likelihood 
-        self.clusters = np.argmax(self.ln_likelihood, axis = 0)
+        self.clusters = np.argmax(self.cluster_frame_ln_likelihoods, axis = 0)
         self.clusters_uniform = np.copy(self.clusters)
-        # save logLikelihood
-        self.logLikelihood_uniform = logLikelihoodArray[step-1] 
+        # save log_likelihood
+        self.log_likelihood = log_likelihoodArray[step-1] 
+        self.log_likelihood_uniform = self.log_likelihood
         # iteratively align averages
         self.centers, self.globalCenter = traj_tools.traj_iterative_average_weighted(self.centers,self.weights)
         self.centers_uniform = np.copy(self.centers)
         for k in range(self.n_clusters):
             indeces = np.argwhere(self.clusters == k).flatten()
-            self.traj_data[indeces] = traj_tools.traj_align(self.traj_data[indeces],self.centers[k])
+            traj_data[indeces] = traj_tools.traj_align(traj_data[indeces],self.centers[k])
         # Compute clustering scores
-        self.silhouette_score = metrics.silhouette_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.ch_score = metrics.calinski_harabasz_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.db_score = metrics.davies_bouldin_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.bic = gmm_shapes_uniform_library.compute_bic_uniform(self.n_features-6, self.n_clusters, self.n_frames, self.logLikelihood_uniform)
+        self.silhouette_score = metrics.silhouette_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.ch_score = metrics.calinski_harabasz_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.db_score = metrics.davies_bouldin_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.bic = gmm_shapes_uniform_library.compute_bic_uniform(self.n_features-6, self.n_clusters, self.n_frames, self.log_likelihood_uniform)
         self.bic_uniform = self.bic 
-        self.aic = gmm_shapes_uniform_library.compute_aic_uniform(self.n_features-6, self.n_clusters, self.logLikelihood_uniform)
+        self.aic = gmm_shapes_uniform_library.compute_aic_uniform(self.n_features-6, self.n_clusters, self.log_likelihood_uniform)
         self.aic_uniform = self.aic
         # uniform has been performed
         self.gmm_uniform_flag = True
+        # return aligned trajectory
+        return traj_data
 
     # weighted fit
-    def fit_weighted(self,traj_data):
+    def fit_weighted(self,traj_data,clusters=[]):
         
         # make sure clusters have been initialized
         if (self.init_clusters_flag == False):
-            self.init_clusters(traj_data)
+            traj_data = self.init_clusters(traj_data)
             # declare some arrays 
             self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
             self.likelihood = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
             self.weights = np.empty(self.n_clusters,dtype=np.float64)
-            self.ln_likelihood = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
+            self.cluster_frame_ln_likelihoods = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
             self.ln_weights = np.empty(self.n_clusters,dtype=np.float64)
             
-        # declare covariance
-        self.covar = np.empty((self.n_clusters,self.n_atoms,self.n_atoms),dtype=np.float64)
+        # declare precision matrices (inverse covariances)
+        self.precisions = np.empty((self.n_clusters,self.n_atoms,self.n_atoms),dtype=np.float64)
+        # declare array for log determinants for each clusters
+        self.lpdets = np.empty(self.n_clusters, dtype=np.float64)
 
-        # compute average and covariance of initial clustering
+        # compute averages and precisions of initial clustering
         for k in range(self.n_clusters):
             indeces = np.argwhere(self.clusters == k).flatten()
             self.weights[k] = indeces.size / self.n_frames
-            self.centers[k], self.covar[k] = traj_tools.traj_iterative_average_covar_weighted_kabsch(self.traj_data[indeces],thresh=self.kabsch_thresh,max_steps=self.kabsch_max_steps)[1:]
+            self.centers[k], self.precisions[k], self.lpdets[k] = traj_tools.traj_iterative_average_precision_weighted_kabsch(traj_data[indeces],thresh=self.kabsch_thresh,max_steps=self.kabsch_max_steps)[1:]
         # 
         if (self.verbose == True):
             print("Weights from initial clusters in fit_weighted:", self.weights)
@@ -182,44 +192,45 @@ class ShapeGMM:
         # perform Expectation Maximization
         logLikeDiff = 2*self.log_thresh
         step = 0
-        logLikelihoodArray = np.empty(self.max_steps,dtype=np.float64)
+        log_likelihoodArray = np.empty(self.max_steps,dtype=np.float64)
         while step < self.max_steps and logLikeDiff > self.log_thresh:
             # Expectation step
-            self.ln_likelihood = gmm_shapes_weighted_library.expectation_weighted(self.traj_data, self.centers, self.covar)
-            #print(self.ln_likelihood)
-            # Maximum Likelihood Optimization
-            self.centers, self.covar, self.ln_weights, logLikelihoodArray[step] = gmm_shapes_weighted_library.maximum_likelihood_opt_weighted(self.ln_weights, self.ln_likelihood, self.centers, self.traj_data, self.covar,self.kabsch_thresh, self.kabsch_max_steps)
+            self.cluster_frame_ln_likelihoods = gmm_shapes_weighted_library.expectation_weighted(traj_data, self.centers, self.precisions, self.lpdets)
+            # Maximum Likelihood Oprecisionptimization
+            self.centers, self.precisions, self.lpdets, self.ln_weights, log_likelihoodArray[step] = gmm_shapes_weighted_library.maximum_likelihood_opt_weighted(self.ln_weights, self.cluster_frame_ln_likelihoods, self.centers, traj_data, self.precisions, self.lpdets, self.kabsch_thresh, self.kabsch_max_steps)
             if (self.verbose == True):
-                print(step, np.exp(self.ln_weights), logLikelihoodArray[step])
+                print(step, np.exp(self.ln_weights), log_likelihoodArray[step])
             # compute convergence criteria
             if step>0:
-                logLikeDiff = np.abs(logLikelihoodArray[step] - logLikelihoodArray[step-1])
+                logLikeDiff = np.abs(log_likelihoodArray[step] - log_likelihoodArray[step-1])
             step += 1
         # recompute weights
         self.weights = np.exp(self.ln_weights).astype(np.float64)
         self.weights_weighted = np.copy(self.weights)
         # assign clusters based on largest likelihood 
-        self.clusters = np.argmax(self.ln_likelihood, axis = 0)
+        self.clusters = np.argmax(self.cluster_frame_ln_likelihoods, axis = 0)
         self.clusters_weighted = np.copy(self.clusters)
-        # save logLikelihood
-        self.logLikelihood = logLikelihoodArray[step-1] 
-        self.logLikelihood_weighted = self.logLikelihood
-        # iteratively align averages
+        # save log_likelihood
+        self.log_likelihood = log_likelihoodArray[step-1] 
+        self.log_likelihood_weighted = self.log_likelihood
+        # iteratively align averages (note this in using uniform Kabsch)
         self.centers, self.globalCenter = traj_tools.traj_iterative_average_weighted(self.centers,self.weights)
         self.centers_weighted = np.copy(self.centers)
         for k in range(self.n_clusters):
             indeces = np.argwhere(self.clusters == k).flatten()
-            self.traj_data[indeces] = traj_tools.traj_align_weighted_kabsch(self.traj_data[indeces],self.centers[k],self.covar[k])
+            traj_data[indeces] = traj_tools.traj_align_weighted_kabsch(traj_data[indeces],self.centers[k],self.precisions[k])
         # Compute clustering scores
-        self.silhouette_score = metrics.silhouette_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.ch_score = metrics.calinski_harabasz_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.db_score = metrics.davies_bouldin_score(self.traj_data.reshape(self.n_frames,self.n_features), self.clusters)
-        self.bic = gmm_shapes_weighted_library.compute_bic(self.n_atoms, self.n_dim, self.n_clusters, self.n_frames, self.logLikelihood)
+        self.silhouette_score = metrics.silhouette_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.ch_score = metrics.calinski_harabasz_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.db_score = metrics.davies_bouldin_score(traj_data.reshape(self.n_frames,self.n_features), self.clusters)
+        self.bic = gmm_shapes_weighted_library.compute_bic(self.n_atoms, self.n_dim, self.n_clusters, self.n_frames, self.log_likelihood)
         self.bic_weighted = self.bic
-        self.aic = gmm_shapes_weighted_library.compute_aic(self.n_atoms, self.n_dim, self.n_clusters, self.logLikelihood)
+        self.aic = gmm_shapes_weighted_library.compute_aic(self.n_atoms, self.n_dim, self.n_clusters, self.log_likelihood)
         self.aic_weighted = self.aic
         # weighted has been performed
         self.gmm_weighted_flag = True
+        # return aligned trajectory
+        return traj_data
 
     # predict clustering of provided data based on prefit parameters from fit_weighted
     def predict_weighted(self,traj_data):
@@ -227,21 +238,25 @@ class ShapeGMM:
             # get metadata from trajectory data
             n_frames = traj_data.shape[0]
             # declare likelihood array
-            ln_likelihood = np.empty((self.n_clusters,n_frames),dtype=np.float64)
+            cluster_frame_ln_likelihoods = np.empty((self.n_clusters,n_frames),dtype=np.float64)
             # make sure trajectory is centered
             traj_data = traj_tools.traj_remove_cog_translation(traj_data)
             # Expectation step
             for k in range(self.n_clusters):
                 # align the entire trajectory to each cluster mean
-                traj_data = traj_tools.traj_align_weighted_kabsch(traj_data,self.centers[k],self.covar[k])
-                ln_likelihood[k,:] = gmm_shapes_weighted_library.ln_multivariate_NxN_gaussian_pdf(traj_data, self.centers[k], self.covar[k])
+                traj_data = traj_tools.traj_align_weighted_kabsch(traj_data,self.centers[k],self.precisions[k])
+                cluster_frame_ln_likelihoods[k,:] = gmm_shapes_weighted_library.ln_multivariate_NxN_gaussian_pdf(traj_data, self.centers[k], self.precisions[k], self.lpdets[k])
+            # compute log likelihood
+            log_likelihood = 0.0
+            for i in range(n_frames):
+                log_likelihood += gmm_shapes_weighted_library.logsumexp(cluster_frame_ln_likelihoods[:,i] + self.ln_weights)
             # assign clusters based on largest likelihood (probability density)
-            clusters = np.argmax(ln_likelihood, axis = 0)
+            clusters = np.argmax(cluster_frame_ln_likelihoods, axis = 0)
             # center trajectory around averages
             for k in range(self.n_clusters):
                 indeces = np.argwhere(clusters == k).flatten()
-                traj_data[indeces] = traj_tools.traj_align_weighted_kabsch(traj_data[indeces],self.centers[k],self.covar[k])
-            return clusters, traj_data
+                traj_data[indeces] = traj_tools.traj_align_weighted_kabsch(traj_data[indeces],self.centers[k],self.precisions[k])
+            return clusters, traj_data, log_likelihood
         else:
             print("Weighted shape-GMM must be fitted before you can predict.")
 
@@ -251,21 +266,25 @@ class ShapeGMM:
             # get metadata from trajectory data
             n_frames = traj_data.shape[0]
             # declare likelihood array
-            ln_likelihood = np.empty((self.n_clusters,n_frames),dtype=np.float64)
+            cluster_frame_ln_likelihoods = np.empty((self.n_clusters,n_frames),dtype=np.float64)
             # make sure trajectory is centered
             traj_data = traj_tools.traj_remove_cog_translation(traj_data)
             # Expectation step
             for k in range(self.n_clusters):
                 # align the entire trajectory to each cluster mean
                 traj_data = traj_tools.traj_align(traj_data,self.centers[k])
-                ln_likelihood[k,:] = gmm_shapes_uniform_library.ln_spherical_gaussian_pdf(traj_data.reshape(n_frames,self.n_features), self.centers[k].reshape(self.n_features), self.var[k])
+                cluster_frame_ln_likelihoods[k,:] = gmm_shapes_uniform_library.ln_spherical_gaussian_pdf(traj_data.reshape(n_frames,self.n_features), self.centers[k].reshape(self.n_features), self.var[k])
+            # compute log likelihood
+            log_likelihood = 0.0
+            for i in range(n_frames):
+                log_likelihood += gmm_shapes_uniform_library.logsumexp(cluster_frame_ln_likelihoods[:,i] + self.ln_weights)
             # assign clusters based on largest likelihood (probability density)
-            clusters = np.argmax(ln_likelihood, axis = 0)
+            clusters = np.argmax(cluster_frame_ln_likelihoods, axis = 0)
             # center trajectory around averages
             for k in range(self.n_clusters):
                 indeces = np.argwhere(clusters == k).flatten()
                 traj_data[indeces] = traj_tools.traj_align(traj_data[indeces],self.centers[k])
-            return clusters, traj_data
+            return clusters, traj_data, log_likelihood
         else:
             print("Uniform shape-GMM must be fitted before you can predict.")
 
