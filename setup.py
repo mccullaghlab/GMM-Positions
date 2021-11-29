@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='GMM-position',
+    name='shapeGMM',
     version='0.0.2',
     author='Martin McCullagh',
     author_email='martin.mccullagh@okstate.edu',
