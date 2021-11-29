@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+setup.cfg
+setup.py
+src/shapeGMM/__init__.py
+src/shapeGMM/gmm_shapes.py
+src/shapeGMM/gmm_shapes_uniform_library.py
+src/shapeGMM/gmm_shapes_weighted_library.py
+src/shapeGMM/kmeans_shapes.py
+src/shapeGMM/traj_tools.py
+src/shapeGMM.egg-info/PKG-INFO
+src/shapeGMM.egg-info/SOURCES.txt
+src/shapeGMM.egg-info/dependency_links.txt
+src/shapeGMM.egg-info/requires.txt
+src/shapeGMM.egg-info/top_level.txt
