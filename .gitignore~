@@ -4,5 +4,5 @@
 *.gz
 # ignore wheel files
 *.whl
-# ignore backups
- *~
+# ignore vi backups
+*~

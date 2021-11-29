@@ -4,7 +4,7 @@ from numba import jit
 import warnings
 warnings.filterwarnings('ignore')
 import random
-import traj_tools
+from . import _traj_tools as traj_tools
 #from scipy.special import logsumexp
 
 NUMERIC_THRESH = 1E-150

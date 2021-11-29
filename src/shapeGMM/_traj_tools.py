@@ -520,6 +520,7 @@ def traj_iterative_average_precision_weighted_weighted_kabsch(traj_data, weights
     log_lik = weight_kabsch_log_lik(aligned_pos, avg, prev_precision, prev_lpdet)
     # perform iterative alignment and average to converge average
     log_lik_diff = 10 + thresh
+    precision = prev_precision
     step = 0
     while log_lik_diff > thresh and step < max_steps:
         # rezero new average

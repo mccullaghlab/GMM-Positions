@@ -3,7 +3,7 @@ import numba
 from numba import jit
 from sklearn import metrics
 import random
-import traj_tools
+from . import _traj_tools as traj_tools
 
 numericThresh = 1E-150
 logNumericThresh = np.log(numericThresh)

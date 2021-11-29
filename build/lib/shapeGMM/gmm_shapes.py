@@ -6,10 +6,10 @@ warnings.filterwarnings('ignore')
 from sklearn import metrics
 import random
 # the following are local libraries
-import traj_tools
-import kmeans_shapes
-import gmm_shapes_uniform_library
-import gmm_shapes_weighted_library
+from . import _traj_tools as traj_tools
+from . import _kmeans_shapes as kmeans_shape
+from . import _gmm_shapes_uniform_library as gmm_shapes_uniform_library
+from . import _gmm_shapes_weighted_library as gmm_shapes_weighted_library
 
 # class
 class ShapeGMM:
@@ -57,7 +57,7 @@ class ShapeGMM:
         self.fit_weighted(traj_data)
     
     # initialize clusters
-    def init_clusters(self,traj_data, clusters):
+    def init_clusters(self,traj_data, clusters=[]):
         
         # get metadata
         self.n_frames = int(traj_data.shape[0])
@@ -97,7 +97,7 @@ class ShapeGMM:
     def fit_uniform(self,traj_data, clusters = []):
         # Initialize clusters if they have not been already
         if (self.init_clusters_flag == False):
-            traj_data = self.init_clusters(traj_data)
+            traj_data = self.init_clusters(traj_data, clusters)
         # declare some important arrays for the model
         self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
         self.var = np.empty(self.n_clusters,dtype=np.float64)
@@ -164,7 +164,7 @@ class ShapeGMM:
         
         # make sure clusters have been initialized
         if (self.init_clusters_flag == False):
-            traj_data = self.init_clusters(traj_data)
+            traj_data = self.init_clusters(traj_data, clusters)
             # declare some arrays 
             self.centers = np.empty((self.n_clusters,self.n_atoms,self.n_dim),dtype=np.float64)
             self.likelihood = np.empty((self.n_clusters,self.n_frames),dtype=np.float64)
