@@ -1,0 +1,22 @@
+
+import setuptools
+
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
+setuptools.setup(
+    name='GMM-position',
+    version='0.0.2',
+    author='Martin McCullagh',
+    author_email='martin.mccullagh@okstate.edu',
+    description='Gaussian Mixture Model clustering in size-and-shape space',
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url='https://github.com/mccullaghlab/GMM-Positions',
+    project_urls = {
+        "Bug Tracker": "https://github.com/mccullaghlab/GMM-Positions/issues"
+    },
+    license='MIT',
+    packages=['toolbox'],
+    install_requires=['numpy','numba','random','sklearn','warnings'],
+)

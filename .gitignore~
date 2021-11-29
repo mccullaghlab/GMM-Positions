@@ -1,0 +1,6 @@
+# ignore all logs
+*.log
+# ignore gz
+*.gz
+# ignore wheel files
+*.whl

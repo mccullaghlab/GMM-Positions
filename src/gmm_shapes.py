@@ -3,10 +3,7 @@ import numba
 from numba import jit
 import warnings
 warnings.filterwarnings('ignore')
-from sklearn import mixture
 from sklearn import metrics
-from scipy.stats import multivariate_normal
-from scipy import spatial
 import random
 # the following are local libraries
 import traj_tools
