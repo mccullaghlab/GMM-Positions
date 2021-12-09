@@ -1,6 +1,6 @@
+LICENSE
 README.md
 pyproject.toml
-setup.cfg
 setup.py
 src/shapeGMM/__init__.py
 src/shapeGMM/_gmm_shapes_uniform_library.py
