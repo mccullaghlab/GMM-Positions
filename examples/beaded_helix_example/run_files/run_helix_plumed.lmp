@@ -1,0 +1,47 @@
+units lj
+
+variable seed equal 1
+variable dt equal 0.005
+variable tau equal ${dt}*100
+timestep ${dt}
+
+variable rise equal 1.5
+variable rise_cut equal ${rise}*2.0
+variable repulsive_dist equal 1.5
+variable repulsive_cut equal ${repulsive_dist}*1.12246204831
+
+atom_style bond
+dimension 3
+read_data trajectory_polymer_unique_eps6.0_1.lammpsdata
+
+bond_style harmonic
+bond_coeff * 100.0 1.0
+
+pair_style lj/cut ${rise_cut}
+# type1 type2 epsilon distance cutoff
+pair_coeff * * 3.0 ${repulsive_dist} ${repulsive_cut}
+pair_coeff 1 5 ${eps} ${rise}
+pair_coeff 2 6 ${eps} ${rise}
+pair_coeff 3 7 ${eps} ${rise}
+pair_coeff 4 8 ${eps} ${rise}
+pair_coeff 5 9 ${eps} ${rise}
+pair_coeff 6 10 ${eps} ${rise}
+pair_coeff 7 11 ${eps} ${rise}
+pair_coeff 8 12 ${eps} ${rise}
+pair_modify shift yes
+special_bonds lj 0.0 0.5 1.0
+
+
+atom_modify sort 1 0.5
+
+velocity all create 1.0 ${seed}
+fix 1 all nvt temp 1.0 1.0 ${tau}
+fix 2 all plumed plumedfile ${plumed_file}
+
+dump 1 all dcd 5000 ${outprefix}.dcd
+dump 2 all atom ${steps} ${outprefix}.lammpstrj
+dump_modify 2 sort id scale no
+
+thermo 1000
+
+run ${steps}
