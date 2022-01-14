@@ -56,11 +56,12 @@ class ShapeGMM:
         self.n_atoms = traj_data.shape[1]
         self.n_dim = traj_data.shape[2]
         self.n_features = self.n_dim*self.n_atoms
-        # print metadata to log
-        print("Number of frames being analyzed:", self.n_frames)
-        print("Number of particles being analyzed:", self.n_atoms)
-        print("Number of dimensions (must be 3):", self.n_dim)
-        print("Initializing clustering using method:", self.init_cluster_method)
+        if (self.verbose == True):
+            # print metadata to log
+            print("Number of frames being analyzed:", self.n_frames)
+            print("Number of particles being analyzed:", self.n_atoms)
+            print("Number of dimensions (must be 3):", self.n_dim)
+            print("Initializing clustering using method:", self.init_cluster_method)
         # declare clusters
         self.clusters = np.zeros(self.n_frames,dtype=np.int)
 

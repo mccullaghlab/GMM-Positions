@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='shapeGMM',
-    version='0.0.2',
+    version='0.0.5',
     author='Martin McCullagh',
     author_email='martin.mccullagh@okstate.edu',
     description='Gaussian Mixture Model clustering in size-and-shape space',
@@ -25,5 +25,5 @@ setuptools.setup(
     packages=setuptools.find_packages(where="src"),
     python_requires=">=3.6",
     license='MIT',
-    install_requires=['numpy','numba','random','sklearn'],
+    install_requires=['numpy','numba','sklearn'],
 )

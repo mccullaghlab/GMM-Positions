@@ -148,6 +148,31 @@ def weight_kabsch_rotate(mobile, target, weights):
     return mobile_prime
 
 @jit(nopython=True)
+def fast_weight_kabsch_rotate(mobile, weights_target):
+    correlation_matrix = np.dot(np.transpose(mobile), weights_target)
+    V, S, W_tr = np.linalg.svd(correlation_matrix)
+    if np.linalg.det(V) * np.linalg.det(W_tr) < 0.0:
+        V[:, -1] = -V[:, -1]
+    rotation = np.dot(V, W_tr)
+    mobile_prime = np.dot(mobile,rotation)
+    return mobile_prime
+
+@jit(nopython=True)
+def covar_NxN_from_traj(disp):
+    # trajectory metadata
+    n_frames = disp.shape[0]
+    n_atoms = disp.shape[1]
+    # declare covar
+    covar = np.zeros((n_atoms,n_atoms),np.float64)
+    # loop and compute
+    for ts in range(n_frames):
+        covar += np.dot(disp[ts],disp[ts].T)
+    # symmetrize and average covar
+    covar /= 3*(n_frames-1)
+    # done, return
+    return covar
+
+@jit(nopython=True)
 def weight_kabsch_rmsd(mobile, target, weights):
     xyz1_prime = weight_kabsch_rotate(mobile, target, weights)
     delta = xyz1_prime - target
@@ -300,12 +325,8 @@ def traj_iterative_average_precision_weighted_kabsch(traj_data,thresh=1E-3,max_s
     nDim = traj_data.shape[2]
     # Initialize with uniform weighted Kabsch
     avg, aligned_pos = traj_iterative_average(traj_data,thresh)
-    # Compute Kabsch Weights
-    disp = aligned_pos - avg
-    covar = np.zeros((n_atoms,n_atoms),dtype=np.float64)
-    for ts in range(n_frames):
-        covar += np.dot(disp[ts],disp[ts].T)
-    covar /= nDim*(n_frames-1)
+    # compute NxN covar
+    covar = covar_NxN_from_traj(aligned_pos-avg)
     # determine precision and pseudo determinant 
     lpdet, precision, rank = pseudo_lpdet_inv(covar)
     # compute log likelihood
@@ -317,17 +338,14 @@ def traj_iterative_average_precision_weighted_kabsch(traj_data,thresh=1E-3,max_s
         # rezero new average
         new_avg = np.zeros((n_atoms,nDim),dtype=np.float64)
         # align trajectory to average and accumulate new average
+        weights_target = np.dot(precision,avg)
         for ts in range(n_frames):
-            aligned_pos[ts] = weight_kabsch_rotate(aligned_pos[ts], avg, precision)
+            aligned_pos[ts] = fast_weight_kabsch_rotate(aligned_pos[ts], weights_target)
             new_avg += aligned_pos[ts]
         # finish average
         new_avg /= n_frames
         # compute new Kabsch Weights
-        covar = np.zeros((n_atoms,n_atoms),dtype=np.float64)
-        for ts in range(n_frames):
-            disp = aligned_pos[ts] - new_avg
-            covar += np.dot(disp,disp.T)    
-        covar /= nDim*(n_frames-1)
+        covar = covar_NxN_from_traj(aligned_pos-new_avg)
         # determine precision and pseudo determinant 
         lpdet, precision, rank = pseudo_lpdet_inv(covar)
         # compute log likelihood
@@ -526,16 +544,17 @@ def traj_iterative_average_precision_weighted_weighted_kabsch(traj_data, weights
         # rezero new average
         new_avg = np.zeros((n_atoms,nDim),dtype=np.float64)
         # align trajectory to average and accumulate new average
+        weights_target = np.dot(precision,avg)
         for ts in range(n_frames):
             # align to average
-            aligned_pos[ts] = weight_kabsch_rotate(aligned_pos[ts], avg, precision)
+            aligned_pos[ts] = fast_weight_kabsch_rotate(aligned_pos[ts], weights_target)
             new_avg += weights[ts]*aligned_pos[ts]
-        # compute new Kabsch Weights
+        # compute covar using weights
         covar = np.zeros((n_atoms,n_atoms),dtype=np.float64)
         for ts in range(n_frames):
             disp = aligned_pos[ts] - new_avg
             covar += weights[ts]*np.dot(disp,disp.T)
-        covar /= 3.0
+        covar /= 3.0 # covar still needs to be averaged over x, y, z
         # determine precision and pseudo determinant 
         lpdet, precision, rank = pseudo_lpdet_inv(covar)
         # compute log likelihood
@@ -555,9 +574,10 @@ def traj_align_weighted_kabsch(traj_data, ref, precision):
     n_frames = traj_data.shape[0]
     # create numpy array of aligned positions
     aligned_pos = np.copy(traj_data)
+    weights_target = np.dot(precision,ref)
     for ts in range(n_frames):
         # align positions based on weighted Kabsch
-        aligned_pos[ts] = weight_kabsch_rotate(aligned_pos[ts], ref, precision)
+        aligned_pos[ts] = fast_weight_kabsch_rotate(aligned_pos[ts], weights_target)
     return aligned_pos
 
 # align trajectory data to a reference structure
