@@ -6,3 +6,5 @@
 *.whl
 # ignore vi backups
 *~
+# ignore jupyter checkpoints
+*.ipynb_checkpoints

@@ -1,6 +1,4 @@
 numpy
-sklearn
 scipy
+sklearn
 numba
-random
-warnings
