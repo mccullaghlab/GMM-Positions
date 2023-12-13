@@ -2,6 +2,8 @@
 
 ## Overview
 
+This package is no longer maintained.  Instead, please use https://github.com/mccullaghlab/shapeGMMTorch which is a pyTorch version of the same method and is much faster.
+
 This is a package to perform Gaussian Mixture Model (GMM) clustering on particle positions (in <img src="https://render.githubusercontent.com/render/math?math=\mathbb{R}^3">). Like other GMM schemes, the user must specify the number of clusters and a cluster initialization scheme (defaults to random).  This is specified in the object initialization line, analagous to how it is done for the sklean GaussianMixture package.  There are two choices for the form of the covariance but those are specified by calling different fit functions.  See preprint (https://arxiv.org/abs/2112.11424) for additional details.
 
 ## Installation

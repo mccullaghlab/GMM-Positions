@@ -67,8 +67,8 @@ class ShapeKmeans:
         # center trajectory to start
         self.traj_data = traj_tools.traj_remove_cog_translation(traj_data)
         # declare some arrays
-        self.clusters = np.zeros(n_frames,dtype=np.int)
-        rand_frames = np.empty(self.n_clusters,dtype=np.int)
+        self.clusters = np.zeros(n_frames,dtype=int)
+        rand_frames = np.empty(self.n_clusters,dtype=int)
         dists = np.empty((n_frames,self.n_clusters),dtype=np.float64)
         self.centers = np.empty((self.n_clusters,n_atoms,3),dtype=np.float64)
         # initialize centers with random frames

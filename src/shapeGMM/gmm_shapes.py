@@ -63,7 +63,7 @@ class ShapeGMM:
             print("Number of dimensions (must be 3):", self.n_dim)
             print("Initializing clustering using method:", self.init_cluster_method)
         # declare clusters
-        self.clusters = np.zeros(self.n_frames,dtype=np.int)
+        self.clusters = np.zeros(self.n_frames,dtype=int)
 
         # Center and align the entire trajectory to start using uniform Kabsch
         traj_data = traj_tools.traj_iterative_average(traj_data)[1]

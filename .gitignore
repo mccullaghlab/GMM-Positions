@@ -9,4 +9,6 @@
 *.swp
 # ignore jupyter checkpoints
 *.ipynb_checkpoints
-
+# ignore build and dist
+build
+dist
